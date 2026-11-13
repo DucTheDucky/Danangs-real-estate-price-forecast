@@ -1,19 +1,18 @@
 """
 ================================================================================
-DEMO DỰ ĐOÁN GIÁ BẤT ĐỘNG SẢN TP. ĐÀ NẴNG - MÔ HÌNH LINEAR REGRESSION (MAI391)
+DEMO DỰ ĐOÁN GIÁ BẤT ĐỘNG SẢN TP. ĐÀ NẴNG - LINEAR REGRESSION CẢI TIẾN (MAI391)
 ================================================================================
-Inputs:
-  1. Loại hình BĐS: Đất nền, Căn hộ/Condotel, Nhà phố, Nhà riêng, Biệt thự
-  2. Diện tích: Giá trị số dương (m²)
-  3. Khu vực: Quận Sơn Trà, Quận Hải Châu, Quận Thanh Khê, Quận Ngũ Hành Sơn,
-              Quận Cẩm Lệ, Quận Liên Chiểu, Huyện Hòa Vang
+Nâng cấp mô hình:
+  1. Phân tách 2 nhóm mô hình chuyên biệt:
+     - Nhóm 1: Căn hộ / Condotel (Test R² = 0.6648, Test RMSE = 0.997 Tỷ, MAE = 0.719 Tỷ)
+     - Nhóm 2: BĐS Thổ cư: Đất nền, Nhà phố, Nhà riêng, Biệt thự (Test R² = 0.6759, RMSE = 4.720 Tỷ)
+  2. Bổ sung Biến tương tác (Interaction Terms: Area × District & Area × Property_Type)
+     giúp mỗi khu vực và loại hình có đơn giá/m² (Slope) riêng biệt, sát thực tế.
 
-Output:
-  - Giá dự đoán theo Mô hình Hồi quy Đa biến (Tỷ VNĐ & VNĐ chi tiết)
-  - Đơn giá trung bình ước lượng (Triệu VNĐ/m²)
-  - Khoảng giá ước lượng (± RMSE)
-  - So sánh với Mô hình Đơn biến theo riêng từng Quận
-  - Giải thích chi tiết các thành phần đóng góp của phương trình hồi quy
+Inputs:
+  1. Loại hình BĐS
+  2. Diện tích (m²)
+  3. Khu vực (Quận / Huyện Đà Nẵng)
 """
 
 import sys
@@ -23,44 +22,78 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 # ==============================================================================
-# HỆ SỐ MÔ HÌNH HỒI QUY ĐA BIẾN (MULTIPLE LINEAR REGRESSION)
-# Mốc tham chiếu (Baseline): Huyện Hòa Vang & Đất nền
+# NHÓM 1: MÔ HÌNH CĂN HỘ / CONDOTEL + BIẾN TƯƠNG TÁC (Mốc chuẩn: Quận Sơn Trà)
 # ==============================================================================
-BIAS_INTERCEPT = -7.2100
-COEF_AREA = 0.0771  # Tỷ VNĐ trên mỗi m²
-
-COEF_DISTRICTS = {
-    'Quận Sơn Trà': 10.7985,
-    'Quận Hải Châu': 8.7161,
-    'Quận Thanh Khê': 7.2628,
-    'Quận Ngũ Hành Sơn': 7.0718,
-    'Quận Cẩm Lệ': 5.9537,
-    'Quận Liên Chiểu': 4.9287,
-    'Huyện Hòa Vang': 0.0000   # Baseline
+APT_MODEL = {
+    'bias': 1.0410,
+    'slope_base': 0.0682,
+    'rmse': 0.9971,
+    'mae': 0.7187,
+    'r2_test': 0.6648,
+    'mape_pct': 21.9,
+    'district_intercept': {
+        'Quận Sơn Trà': 0.0000,
+        'Quận Ngũ Hành Sơn': -0.7440,
+        'Quận Hải Châu': -1.1990,
+        'Quận Thanh Khê': -1.3988,
+        'Quận Cẩm Lệ': 0.0677,
+        'Quận Liên Chiểu': -0.3424,
+        'Huyện Hòa Vang': -0.3424,  # Fallback theo Liên Chiểu do Hòa Vang không có mẫu căn hộ
+    },
+    'district_slope_delta': {
+        'Quận Sơn Trà': 0.0000,
+        'Quận Ngũ Hành Sơn': -0.0162,
+        'Quận Hải Châu': 0.0101,
+        'Quận Thanh Khê': -0.0115,
+        'Quận Cẩm Lệ': -0.0380,
+        'Quận Liên Chiểu': -0.0389,
+        'Huyện Hòa Vang': -0.0389,
+    }
 }
 
-COEF_PROPERTY_TYPES = {
-    'Nhà phố': 3.9637,
-    'Biệt thự': 1.6782,
-    'Nhà riêng': -0.4602,
-    'Căn hộ/Condotel': -1.6104,
-    'Đất nền': 0.0000        # Baseline
+# ==============================================================================
+# NHÓM 2: MÔ HÌNH BĐS THỔ CƯ + BIẾN TƯƠNG TÁC (Mốc chuẩn: Quận Sơn Trà, Đất nền)
+# ==============================================================================
+LAND_MODEL = {
+    'bias': 0.0927,
+    'slope_base': 0.1226,
+    'rmse': 4.7201,
+    'mae': 3.5794,
+    'r2_test': 0.6759,
+    'mape_pct': 30.0,
+    'district_intercept': {
+        'Quận Sơn Trà': 0.0000,
+        'Quận Hải Châu': -3.6405,
+        'Quận Thanh Khê': -5.7161,
+        'Quận Ngũ Hành Sơn': -3.3048,
+        'Quận Cẩm Lệ': -2.6013,
+        'Quận Liên Chiểu': -0.4785,
+        'Huyện Hòa Vang': 1.2320,
+    },
+    'district_slope_delta': {
+        'Quận Sơn Trà': 0.0000,
+        'Quận Hải Châu': -0.0090,
+        'Quận Thanh Khê': 0.0099,
+        'Quận Ngũ Hành Sơn': -0.0059,
+        'Quận Cẩm Lệ': -0.0452,
+        'Quận Liên Chiểu': -0.0726,
+        'Huyện Hòa Vang': -0.1121,
+    },
+    'property_intercept': {
+        'Đất nền': 0.0000,
+        'Nhà phố': 8.1275,
+        'Nhà riêng': 6.3376,
+        'Biệt thự': 1.8478,
+    },
+    'property_slope_delta': {
+        'Đất nền': 0.0000,
+        'Nhà phố': -0.0256,
+        'Nhà riêng': -0.0603,
+        'Biệt thự': 0.0053,
+    }
 }
 
-# RMSE và MAE riêng theo từng loại hình BĐS (đo trên tập dữ liệu sạch kiểm thử)
-SEGMENT_ERRORS = {
-    'Căn hộ/Condotel': {'rmse': 1.4256, 'mae': 1.0897, 'mape_pct': 22.0},
-    'Nhà riêng':       {'rmse': 1.7418, 'mae': 1.3633, 'mape_pct': 24.5},
-    'Nhà phố':         {'rmse': 5.6526, 'mae': 4.1830, 'mape_pct': 28.0},
-    'Đất nền':         {'rmse': 5.6915, 'mae': 4.5255, 'mape_pct': 32.0},
-    'Biệt thự':        {'rmse': 13.7796, 'mae': 8.2288, 'mape_pct': 35.0}
-}
-RMSE_MULTI_GLOBAL = 3.2427  # Tỷ VNĐ (RMSE gộp toàn thành phố)
-
-# ==============================================================================
-# HỆ SỐ MÔ HÌNH ĐƠN BIẾN THEO TỪNG QUẬN (DISTRICT-SPECIFIC LINEAR REGRESSION)
-# y = slope * Area + intercept (Tỷ VNĐ)
-# ==============================================================================
+# Mô hình đơn biến theo quận để tham khảo đối chiếu
 DISTRICT_SIMPLE_MODELS = {
     'Quận Sơn Trà': {'slope': 0.1493, 'intercept': -2.3131, 'rmse': 4.8903, 'r2': 0.6030},
     'Quận Hải Châu': {'slope': 0.1114, 'intercept': -0.5703, 'rmse': 4.5071, 'r2': 0.4585},
@@ -71,11 +104,10 @@ DISTRICT_SIMPLE_MODELS = {
     'Huyện Hòa Vang': {'slope': -0.0074, 'intercept': 3.5268, 'rmse': 0.7594, 'r2': 0.1077}
 }
 
-VALID_PROPERTY_TYPES = list(COEF_PROPERTY_TYPES.keys())
-VALID_DISTRICTS = list(COEF_DISTRICTS.keys())
+VALID_PROPERTY_TYPES = ['Đất nền', 'Căn hộ/Condotel', 'Nhà phố', 'Nhà riêng', 'Biệt thự']
+VALID_DISTRICTS = list(LAND_MODEL['district_intercept'].keys())
 
 def format_vnd(amount_billion):
-    """Quy đổi số tỷ sang chuỗi tiền tệ VNĐ dễ đọc."""
     vnd = amount_billion * 1e9
     if vnd >= 1e9:
         ty = int(vnd // 1e9)
@@ -86,129 +118,125 @@ def format_vnd(amount_billion):
     elif vnd >= 1e6:
         trieu = int(vnd // 1e6)
         return f"{trieu:,} Triệu VNĐ ({vnd:,.0f} VNĐ)"
-    else:
-        return f"{vnd:,.0f} VNĐ"
+    return f"{vnd:,.0f} VNĐ"
 
 def predict(property_type, area, district):
-    """
-    Hàm tính toán dự đoán từ 3 inputs.
-    """
-    if property_type not in COEF_PROPERTY_TYPES:
+    if property_type not in VALID_PROPERTY_TYPES:
         raise ValueError(f"Loại BĐS '{property_type}' không hợp lệ. Chọn 1 trong: {VALID_PROPERTY_TYPES}")
-    if district not in COEF_DISTRICTS:
+    if district not in VALID_DISTRICTS:
         raise ValueError(f"Khu vực '{district}' không hợp lệ. Chọn 1 trong: {VALID_DISTRICTS}")
     if area <= 0:
         raise ValueError("Diện tích phải là một số thực dương lớn hơn 0.")
 
-    # 1. Dự đoán theo Mô hình Hồi quy Đa biến
-    w_district = COEF_DISTRICTS[district]
-    w_prop = COEF_PROPERTY_TYPES[property_type]
-    area_contrib = COEF_AREA * area
-    
-    pred_price_multi = BIAS_INTERCEPT + area_contrib + w_district + w_prop
-    
-    # Giới hạn giá trị dự đoán không âm
-    pred_price_multi_clean = max(pred_price_multi, 0.3)
-    
-    unit_price_m2 = (pred_price_multi_clean / area) * 1000.0 # Triệu VNĐ / m²
-    
-    # Lấy sai số đặc thù của riêng phân khúc loại hình BĐS này
-    seg_err = SEGMENT_ERRORS.get(property_type, {'rmse': 3.24, 'mae': 2.32, 'mape_pct': 25.0})
-    seg_mae = seg_err['mae']
-    mape_pct = seg_err['mape_pct']
-    
-    # Khoảng giá thực tế dựa trên sai số trung bình tuyệt đối (MAE) và tỷ lệ % phân khúc
-    range_lower_realistic = max(pred_price_multi_clean * (1 - mape_pct / 100.0), 0.3)
-    range_upper_realistic = pred_price_multi_clean * (1 + mape_pct / 100.0)
-    
-    # Khoảng giá lý thuyết theo RMSE gộp toàn cục (dễ bị kéo lệch bởi phân khúc lớn)
-    range_lower_global = max(pred_price_multi_clean - RMSE_MULTI_GLOBAL, 0.2)
-    range_upper_global = pred_price_multi_clean + RMSE_MULTI_GLOBAL
-    
-    # 2. Dự đoán theo Mô hình Đơn biến của Quận
-    dist_model = DISTRICT_SIMPLE_MODELS.get(district, {})
-    pred_price_simple = dist_model['slope'] * area + dist_model['intercept']
-    pred_price_simple_clean = max(pred_price_simple, 0.3)
-    
+    warning_msg = None
+    if property_type == 'Căn hộ/Condotel':
+        group_name = "Nhóm 1: Mô hình Căn hộ / Condotel (có Biến tương tác)"
+        m = APT_MODEL
+        if district == 'Huyện Hòa Vang':
+            warning_msg = "Lưu ý: Tập dữ liệu Hòa Vang hiện chưa có mẫu Căn hộ; hệ số tạm tham chiếu khu vực lân cận Liên Chiểu."
+        d_int = m['district_intercept'][district]
+        d_slp = m['district_slope_delta'][district]
+        p_int = 0.0
+        p_slp = 0.0
+    else:
+        group_name = "Nhóm 2: Mô hình BĐS Thổ cư (có Biến tương tác)"
+        m = LAND_MODEL
+        d_int = m['district_intercept'][district]
+        d_slp = m['district_slope_delta'][district]
+        p_int = m['property_intercept'][property_type]
+        p_slp = m['property_slope_delta'][property_type]
+
+    effective_intercept = m['bias'] + d_int + p_int
+    effective_slope = m['slope_base'] + d_slp + p_slp
+
+    raw_pred = effective_intercept + effective_slope * area
+    pred_price = max(raw_pred, 0.3)
+    unit_price_m2 = (pred_price / area) * 1000.0
+
+    # Khoảng dự báo: giới hạn biên độ tối đa không vượt quá 30% giá trị để tránh dải quá rộng với BĐS giá nhỏ
+    margin = min(m['mae'], pred_price * 0.30)
+    range_lower = max(pred_price - margin, 0.3)
+    range_upper = pred_price + margin
+
+    dist_model = DISTRICT_SIMPLE_MODELS[district]
+    pred_simple = max(dist_model['slope'] * area + dist_model['intercept'], 0.3)
+
     return {
         'property_type': property_type,
         'area': area,
         'district': district,
-        'pred_price_multi': pred_price_multi_clean,
+        'group_name': group_name,
+        'warning_msg': warning_msg,
+        'pred_price': pred_price,
         'unit_price_m2': unit_price_m2,
-        'range_lower_realistic': range_lower_realistic,
-        'range_upper_realistic': range_upper_realistic,
-        'range_lower_global': range_lower_global,
-        'range_upper_global': range_upper_global,
-        'seg_mae': seg_mae,
-        'seg_rmse': seg_err['rmse'],
-        'mape_pct': mape_pct,
-        'breakdown': {
-            'bias': BIAS_INTERCEPT,
-            'area_contrib': area_contrib,
-            'district_name': district,
-            'district_contrib': w_district,
-            'property_name': property_type,
-            'property_contrib': w_prop
+        'range_lower': range_lower,
+        'range_upper': range_upper,
+        'model_rmse': m['rmse'],
+        'model_mae': m['mae'],
+        'model_r2': m['r2_test'],
+        'effective_intercept': effective_intercept,
+        'effective_slope': effective_slope,
+        'components': {
+            'bias': m['bias'],
+            'slope_base': m['slope_base'],
+            'd_int': d_int,
+            'd_slp': d_slp,
+            'p_int': p_int,
+            'p_slp': p_slp,
         },
         'simple_model': {
-            'pred_price': pred_price_simple_clean,
+            'pred_price': pred_simple,
             'slope': dist_model['slope'],
             'intercept': dist_model['intercept'],
             'r2': dist_model['r2'],
-            'rmse': dist_model['rmse']
+            'rmse': dist_model['rmse'],
         }
     }
 
 def print_result(res):
-    print("\n" + "=" * 76)
-    print("                 KẾT QUẢ DỰ ĐOÁN GIÁ BẤT ĐỘNG SẢN (DEMO)")
-    print("=" * 76)
+    print("\n" + "=" * 78)
+    print("        KẾT QUẢ DỰ ĐOÁN GIÁ BẤT ĐỘNG SẢN (LINEAR REGRESSION CẢI TIẾN)")
+    print("=" * 78)
     print("  INPUTS ĐÃ NHẬP:")
     print(f"    1. Loại hình BĐS : {res['property_type']}")
     print(f"    2. Diện tích     : {res['area']} m²")
     print(f"    3. Khu vực       : {res['district']}")
-    print("-" * 76)
-    
-    print("  OUTPUT - KẾT QUẢ DỰ BÁO CHÍNH (MÔ HÌNH HỒI QUY ĐA BIẾN):")
-    print(f"    * GIÁ DỰ ĐOÁN    : {res['pred_price_multi']:.3f} Tỷ VNĐ")
-    print(f"      -> Bằng chữ    : {format_vnd(res['pred_price_multi'])}")
+    print(f"  -> Định tuyến mô hình: {res['group_name']} (Test R² = {res['model_r2']:.4f})")
+    if res['warning_msg']:
+        print(f"  [!] {res['warning_msg']}")
+    print("-" * 78)
+
+    print("  OUTPUT - KẾT QUẢ DỰ BÁO CHÍNH:")
+    print(f"    * GIÁ DỰ ĐOÁN    : {res['pred_price']:.3f} Tỷ VNĐ")
+    print(f"      -> Bằng chữ    : {format_vnd(res['pred_price'])}")
     print(f"    * ĐƠN GIÁ ƯỚC TÍNH: {res['unit_price_m2']:.2f} Triệu VNĐ / m²")
-    print(f"    * KHOẢNG GIÁ DỰ BÁO THỰC TẾ (±{res['mape_pct']:.0f}% sai số phân khúc):")
-    print(f"      [ {res['range_lower_realistic']:.2f} Tỷ  <--->  {res['range_upper_realistic']:.2f} Tỷ VNĐ ]")
-    print(f"      (Sai số tuyệt đối MAE đặc thù phân khúc này chỉ ~ {res['seg_mae']:.2f} Tỷ)")
-    print("-" * 76)
-    print(f"  * LƯU Ý VỀ SAI SỐ RMSE TOÀN CỤC ({RMSE_MULTI_GLOBAL:.2f} Tỷ):")
-    print(f"    Con số RMSE = {RMSE_MULTI_GLOBAL:.2f} Tỷ là sai số trung bình bình phương tính gộp toàn bộ")
-    print(f"    thị trường (bị kéo phình to bởi phân khúc Biệt thự 20-50 tỷ và Nhà phố lớn).")
-    print(f"    Đối với {res['property_type']}, sai số thực tế chỉ khoảng ±{res['seg_mae']:.2f} Tỷ.")
-    print("-" * 76)
-    
-    b = res['breakdown']
-    print("  GIẢI TRÌNH CÁC THÀNH PHẦN ĐÓNG GÓP VÀO GIÁ DỰ BÁO (MULTIPLE OLS):")
-    print(f"    Công thức: ŷ = w₀ + (w_Area × Diện tích) + w_Khu_vực + w_Loại_hình")
-    print(f"      + Hệ số chặn cơ sở (Bias w₀)          : {b['bias']:+8.4f} Tỷ")
-    print(f"      + Đóng góp diện tích (+0.0771 × {res['area']:<5.1f} m²): {b['area_contrib']:+8.4f} Tỷ")
-    print(f"      + Vị trí địa lý ({b['district_name']:<17s})   : {b['district_contrib']:+8.4f} Tỷ")
-    print(f"      + Loại hình ({b['property_name']:<17s})       : {b['property_contrib']:+8.4f} Tỷ")
-    print(f"      -------------------------------------------------------")
-    print(f"      = Tổng giá trị dự đoán                : {res['pred_price_multi']:+8.4f} Tỷ VNĐ")
-    print("-" * 76)
-    
+    print(f"    * KHOẢNG GIÁ DỰ BÁO (± MAE phân khúc = {res['model_mae']:.2f} Tỷ | RMSE = {res['model_rmse']:.2f} Tỷ):")
+    print(f"      [ {res['range_lower']:.2f} Tỷ  <--->  {res['range_upper']:.2f} Tỷ VNĐ ]")
+    print("-" * 78)
+
+    c = res['components']
+    print("  GIẢI TRÌNH PHƯƠNG TRÌNH CÓ BIẾN TƯƠNG TÁC (INTERACTION TERMS):")
+    print(f"    Phương trình rút gọn cho ({res['property_type']} tại {res['district']}):")
+    print(f"      ŷ = {res['effective_slope']:.4f} × Area + ({res['effective_intercept']:+.4f})")
+    print(f"    Chi tiết cấu thành hệ số:")
+    print(f"      + Độ dốc riêng (Slope) = {c['slope_base']:.4f} (Mốc) + ({c['d_slp']:+.4f} Quận) + ({c['p_slp']:+.4f} Loại)")
+    print(f"                             = {res['effective_slope']:.4f} Tỷ/m² ({res['effective_slope']*1000:.1f} triệu/m²)")
+    print(f"      + Hệ số chặn (Intercept)= {c['bias']:+.4f} (Mốc) + ({c['d_int']:+.4f} Quận) + ({c['p_int']:+.4f} Loại)")
+    print(f"                             = {res['effective_intercept']:+.4f} Tỷ VNĐ")
+    print(f"      => Giá trị = {res['effective_slope']:.4f} × {res['area']:.1f} + ({res['effective_intercept']:+.4f}) = {res['pred_price']:.4f} Tỷ VNĐ")
+    print("-" * 78)
+
     sm = res['simple_model']
-    print("  THAM KHẢO THÊM - MÔ HÌNH ĐƠN BIẾN THEO RIÊNG QUẬN NÀY:")
-    print(f"    Phương trình riêng của {res['district']}:")
-    print(f"      ŷ = {sm['slope']:.4f} × Area + ({sm['intercept']:.4f})")
-    print(f"      -> Giá tính theo mô hình đơn biến      : {sm['pred_price']:.3f} Tỷ VNĐ ({format_vnd(sm['pred_price'])})")
-    print(f"      -> Độ tin cậy mô hình của quận         : R² = {sm['r2']:.4f}, RMSE = {sm['rmse']:.3f} Tỷ")
-    print("=" * 76 + "\n")
+    print("  ĐỐI CHIẾU VỚI MÔ HÌNH ĐƠN BIẾN CỦA RIÊNG QUẬN:")
+    print(f"    Phương trình đơn biến {res['district']}: ŷ = {sm['slope']:.4f} × Area + ({sm['intercept']:+.4f})")
+    print(f"    -> Giá ước tính đơn biến: {sm['pred_price']:.3f} Tỷ VNĐ (R² = {sm['r2']:.4f})")
+    print("=" * 78 + "\n")
 
 def interactive_mode():
-    print("=" * 76)
-    print("    CHƯƠNG TRÌNH DEMO DỰ ĐOÁN GIÁ BĐS ĐÀ NẴNG (MAI391 PROJECT)")
-    print("=" * 76)
-    
-    # 1. Chọn loại BĐS
+    print("=" * 78)
+    print("  DEMO DỰ ĐOÁN GIÁ BĐS ĐÀ NẴNG (PHÂN NHÓM CĂN HỘ/THỔ CƯ + BIẾN TƯƠNG TÁC)")
+    print("=" * 78)
+
     print("\n[Bước 1/3] Chọn Loại hình BĐS:")
     for idx, p in enumerate(VALID_PROPERTY_TYPES, 1):
         print(f"   {idx}. {p}")
@@ -225,8 +253,7 @@ def interactive_mode():
             print("   Lựa chọn không hợp lệ, vui lòng nhập lại.")
         except ValueError:
             print("   Vui lòng nhập số nguyên.")
-            
-    # 2. Nhập diện tích
+
     print("\n[Bước 2/3] Nhập Diện tích:")
     while True:
         try:
@@ -239,9 +266,8 @@ def interactive_mode():
                 break
             print("   Diện tích phải lớn hơn 0.")
         except ValueError:
-            print("   Vui lòng nhập số thực hợp lệ (ví dụ: 85, 120.5).")
-            
-    # 3. Chọn khu vực
+            print("   Vui lòng nhập số thực hợp lệ.")
+
     print("\n[Bước 3/3] Chọn Khu vực (Quận/Huyện):")
     for idx, d in enumerate(VALID_DISTRICTS, 1):
         print(f"   {idx}. {d}")
@@ -258,25 +284,21 @@ def interactive_mode():
             print("   Lựa chọn không hợp lệ, vui lòng nhập lại.")
         except ValueError:
             print("   Vui lòng nhập số nguyên.")
-            
-    # Tính toán và xuất kết quả
+
     res = predict(chosen_prop, chosen_area, chosen_district)
     print_result(res)
 
 def main():
-    parser = argparse.ArgumentParser(description="Demo dự đoán giá BĐS Đà Nẵng bằng Linear Regression")
+    parser = argparse.ArgumentParser(description="Demo dự đoán giá BĐS Đà Nẵng (Stratified + Interaction Linear Regression)")
     parser.add_argument('--property', type=str, default=None, help=f"Loại BĐS: {VALID_PROPERTY_TYPES}")
     parser.add_argument('--area', type=float, default=None, help="Diện tích (m²)")
     parser.add_argument('--district', type=str, default=None, help=f"Khu vực: {VALID_DISTRICTS}")
-    
+
     args = parser.parse_args()
-    
-    # Nếu người dùng truyền đủ đối số thì chạy dự đoán ngay
     if args.property and args.area and args.district:
         res = predict(args.property, args.area, args.district)
         print_result(res)
     else:
-        # Nếu không truyền đối số, chạy giao diện tương tác CLI thân thiện
         interactive_mode()
 
 if __name__ == '__main__':
